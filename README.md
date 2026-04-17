@@ -173,7 +173,7 @@ The model learns to blend all three scales intelligently.
 
 ### 1. Input: Three Patch Scales
 ```
-Tissue Image
+Tissue Patch
     ├── Local patch (672×672)     → X_local
     ├── Medium patch (1344×1344)  → X_medium  
     └── Large patch (2016×2016)   → X_large
