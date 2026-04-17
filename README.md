@@ -2,19 +2,11 @@
 
 A deep learning framework for segmenting tumors in medical images using multi-scale analysis and spatial attention.
 
-## What is SAMHA?
+## SAMHA Architecture
 
-SAMHA addresses tumor segmentation in histopathology images by processing patches at **three concurrent scales**:
+![SAMHA architecture overview](assets/architecture/mFOV_arcitecture.png)
 
-1. **Local patches** (672×672) - Detailed tissue features
-2. **Medium context** (1344×1344) - Neighboring tissue information  
-3. **Large context** (2016×2016) - Broader anatomical context
-
-The key innovation is **Spatial-Aware Multi-Head Attention**: instead of treating all tissue regions equally, SAMHA learns to pay more attention to **spatially nearby tissue** while still allowing long-range connections when needed. This is done by injecting a distance penalty into the attention mechanism—closer regions get higher weights, distant regions get lower weights.
-
-The framework then **fuses these three scales** using learned weights, automatically deciding which scale to trust most at each location. This is especially useful for **boundary detection** where accurate tumor-stroma interfaces require both local detail and broader context.
-
-**Result**: Better segmentation accuracy (higher overlap with ground truth) and stronger boundary performance, even when staining varies across images.
+The proposed method uses a multi-FOV design where three co-registered inputs (local, medium, and large) are encoded in parallel and fused before decoding to produce the final segmentation. We present the mFOV pipeline as the main architecture figure, and we use a companion side-by-side view to explain the attention modules: (A) SAMHA, which applies distance-aware cross-scale attention with learnable fusion, and (B) SAMHA-Window, which performs efficient window-based attention at high-resolution stages. Together, these components combine global context and fine local structure for robust, boundary-aware segmentation.
 
 ## Quick Start (5 minutes)
 
@@ -41,6 +33,10 @@ SAMHA/
 ├── args.py                     # Command-line arguments
 ├── requirements.txt            # Dependencies
 ├── README.md                   # This file
+│
+├── assets/
+│   └── architecture/
+│       └── [architecture figures]
 │
 ├── model/
 │   ├── SAMHA.py               # SAMHA attention module
