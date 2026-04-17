@@ -2,11 +2,15 @@
 
 A deep learning framework for segmenting tumors in medical images using multi-scale analysis and spatial attention.
 
-## SAMHA Architecture
+## SAMHA Overall Workflow
 
-![SAMHA architecture overview](assets/architecture/mFOV_arcitecture.png)
+![SAMHA overall workflow](assets/architecture/multi-fov-arcitecture.png)
 
 The proposed method uses a multi-FOV design where three co-registered inputs (local, medium, and large) are encoded in parallel and fused before decoding to produce the final segmentation. We present the mFOV pipeline as the main architecture figure, and we use a companion side-by-side view to explain the attention modules: (A) SAMHA, which applies distance-aware cross-scale attention with learnable fusion, and (B) SAMHA-Window, which performs efficient window-based attention at high-resolution stages. Together, these components combine global context and fine local structure for robust, boundary-aware segmentation.
+
+![SAMHA and SAMHA-Window modules](assets/architecture/samha-samhwin.png)
+
+In the module figure, **A** denotes the SAMHA block and **B** denotes the SAMHA-Window block.
 
 ## Quick Start (5 minutes)
 
