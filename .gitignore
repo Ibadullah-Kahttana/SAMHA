@@ -1,0 +1,51 @@
+# Python caches and build artifacts
+__pycache__/
+*.egg-info/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+
+# Training outputs
+checkpoints/
+prediction/
+runs_1/
+saved_models_1/
+wandb/
+
+# IDE settings
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.bak
+*.csv
+*.json
+*.log
+*.md
+*.tmp
+
+# Data and generated project folders
+FCtL/
+Ideas/
+comparison_results/
+data_1/
+docs/
+hyperparameter_search/
+paper_imp/
+scripts/
+trackfiles/
+visualization/
