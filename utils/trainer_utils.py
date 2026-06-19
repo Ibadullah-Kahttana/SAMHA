@@ -187,22 +187,87 @@ def global_to_context_patches(images, p_size, patch_coordinates, mul=2):
         patches.append(current_context_patches)
     return patches
 
-def stitch_patch_predictions_to_global(patches, n_class, sizes, coordinates, p_size, templates=None):
+def stitch_patch_predictions_to_global(patches, n_class, sizes, coordinates, p_size, templates=None, 
+                                       use_blend=True, blend_method='linear', edge_fade=0.04):
     predictions = [np.zeros((n_class, size[0], size[1])) for size in sizes]
-    for i in range(len(sizes)):
-        for j in range(len(coordinates[i])):
-            top = int(np.round(coordinates[i][j][0] * sizes[i][0]))
-            left = int(np.round(coordinates[i][j][1] * sizes[i][1]))
-            predictions[i][:, top:top+p_size[0], left:left+p_size[1]] += patches[i][j]
-    
-    if templates is not None:
+    if use_blend:
+        weight_sums = [np.zeros((size[0], size[1])) for size in sizes]
+        weight_mask = _create_weight_mask(p_size, method=blend_method, edge_fade=edge_fade)
+        
         for i in range(len(sizes)):
-            overlap_counts = templates[i]
-            if hasattr(overlap_counts, "cpu"):
-                overlap_counts = overlap_counts.cpu().numpy()
-            overlap_counts = np.asarray(overlap_counts).squeeze()
-            predictions[i] /= (overlap_counts + 1e-8)
+            for j in range(len(coordinates[i])):
+                top = int(np.round(coordinates[i][j][0] * sizes[i][0]))
+                left = int(np.round(coordinates[i][j][1] * sizes[i][1]))
+                
+                for c in range(n_class):
+                    predictions[i][c, top:top+p_size[0], left:left+p_size[1]] += patches[i][j][c] * weight_mask
+                weight_sums[i][top:top+p_size[0], left:left+p_size[1]] += weight_mask
+        
+        for i in range(len(sizes)):
+            for c in range(n_class):
+                predictions[i][c] /= (weight_sums[i] + 1e-8)
+    else:
+        for i in range(len(sizes)):
+            for j in range(len(coordinates[i])):
+                top = int(np.round(coordinates[i][j][0] * sizes[i][0]))
+                left = int(np.round(coordinates[i][j][1] * sizes[i][1]))
+                predictions[i][:, top:top+p_size[0], left:left+p_size[1]] += patches[i][j]
+        
+        if templates is not None:
+            for i in range(len(sizes)):
+                overlap_counts = templates[i]
+                if hasattr(overlap_counts, "cpu"):
+                    overlap_counts = overlap_counts.cpu().numpy()
+                overlap_counts = np.asarray(overlap_counts).squeeze()
+                predictions[i] /= (overlap_counts + 1e-8)
+    
     return predictions
+
+def _create_weight_mask(patch_size, method='linear', sigma_scale=0.25, edge_fade=0.04):
+    """
+    Create blending weight mask. Methods:
+    'linear': Fades at edges only - BEST for medical (preserves boundaries, removes seams)
+    'cosine': Raised cosine - good balance
+    'gaussian': Smooth everywhere - may blur boundaries
+    """
+    h, w = patch_size
+    
+    if method == 'gaussian':
+        center_h, center_w = h // 2, w // 2
+        sigma_h, sigma_w = h * sigma_scale, w * sigma_scale
+        y, x = np.ogrid[:h, :w]
+        gaussian_h = np.exp(-((y - center_h) ** 2) / (2 * sigma_h ** 2))
+        gaussian_w = np.exp(-((x - center_w) ** 2) / (2 * sigma_w ** 2))
+        weight_mask = gaussian_h * gaussian_w
+        weight_mask = (weight_mask - weight_mask.min()) / (weight_mask.max() - weight_mask.min() + 1e-8)
+        
+    elif method == 'cosine':
+        fade_h = int(h * edge_fade)
+        fade_w = int(w * edge_fade)
+        weight_y = np.ones(h)
+        weight_x = np.ones(w)
+        if fade_h > 0:
+            weight_y[:fade_h] = 0.5 * (1 - np.cos(np.pi * np.arange(fade_h) / fade_h))
+            weight_y[-fade_h:] = 0.5 * (1 - np.cos(np.pi * np.arange(fade_h, 0, -1) / fade_h))
+        if fade_w > 0:
+            weight_x[:fade_w] = 0.5 * (1 - np.cos(np.pi * np.arange(fade_w) / fade_w))
+            weight_x[-fade_w:] = 0.5 * (1 - np.cos(np.pi * np.arange(fade_w, 0, -1) / fade_w))
+        weight_mask = weight_y[:, None] * weight_x[None, :]
+        
+    else: 
+        fade_h = int(h * edge_fade)
+        fade_w = int(w * edge_fade)
+        weight_y = np.ones(h)
+        weight_x = np.ones(w)
+        if fade_h > 0:
+            weight_y[:fade_h] = np.linspace(0, 1, fade_h)
+            weight_y[-fade_h:] = np.linspace(1, 0, fade_h)
+        if fade_w > 0:
+            weight_x[:fade_w] = np.linspace(0, 1, fade_w)
+            weight_x[-fade_w:] = np.linspace(1, 0, fade_w)
+        weight_mask = weight_y[:, None] * weight_x[None, :]
+    
+    return weight_mask
 
 def collate(batch):
     image = [b['image'] for b in batch]

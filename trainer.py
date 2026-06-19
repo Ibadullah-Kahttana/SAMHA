@@ -123,7 +123,8 @@ class Trainer(object):
                 predicted_patches[i][j:j+actual_output_size] = pred_np
                 j += actual_output_size
         
-        scores = stitch_patch_predictions_to_global(predicted_patches, self.n_class, sizes, coordinates, self.size_p, templates=templates)
+        scores = stitch_patch_predictions_to_global(predicted_patches, self.n_class, sizes, coordinates, self.size_p, templates=templates,
+                                                    use_blend=True, blend_method='linear', edge_fade=0.04)
         predictions = [score.argmax(0) for score in scores]
 
         self.metrics.update(labels_npy, predictions)
@@ -221,7 +222,8 @@ class Evaluator(object):
                 )
                 j += actual_output_size
                     
-        scores = stitch_patch_predictions_to_global(predicted_patches, self.n_class, sizes, coordinates, self.size_p, templates=templates)
+        scores = stitch_patch_predictions_to_global(predicted_patches, self.n_class, sizes, coordinates, self.size_p, templates=templates,
+                                                    use_blend=True, blend_method='linear', edge_fade=0.04)
         predictions = [score.argmax(0) for score in scores]
         self.metrics.update(labels_npy, predictions)
 

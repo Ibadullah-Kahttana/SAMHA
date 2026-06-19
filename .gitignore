@@ -11,7 +11,8 @@ dist/
 # Training outputs
 checkpoints/
 prediction/
-runs_1/
+runs/
+reviews/
 saved_models_1/
 wandb/
 

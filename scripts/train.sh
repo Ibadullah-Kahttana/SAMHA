@@ -1,14 +1,14 @@
 python train.py \
---experiment "experiment_name" \
---task_name "task_name" \
+--experiment "Exp17" \
+--task_name "B0-In3-Win-768-1024-m2-2048-l3-3072-useblend" \
 --gpu "0,1" \
 --input_mode 3 \
 --dataset 1 \
 --n_class 2 \
 --batch_size 2 \
 --sub_batch_size 6 \
---size_p 768 \
---size_g 768 \
+--size_p 1024 \
+--size_g 1024 \
 --context_M 2 \
 --context_L 3 \
 --patch_overlap 0.20 \
@@ -20,9 +20,7 @@ python train.py \
 --distance_sigma 1.0 \
 --lambda_dist_init 0.1 \
 --lambda_dist_trainable True \
---pre_path "weights.pth" \
---train \
---val
+--pre_path "B0-In3-Win-768-m2-1536-l3-2304.pth" \
 
 # log-learned.sh (Default/New SAMHA)
 # --distance_prior "log" \
