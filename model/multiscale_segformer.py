@@ -89,13 +89,18 @@ class MultiScaleSegFormer(nn.Module):
         # SAMHA : High Attention Module
         # SAMHAWindowe : Low Attention Module
         if use_window:
-            self.attention_H1 = SAMHAWindow(enc_channels[0], num_heads=4, window_size=8)
-            self.attention_H2 = SAMHAWindow(enc_channels[1], num_heads=4, window_size=8)
-            self.attention_H3 = SAMHAWindow(enc_channels[2], num_heads=4, window_size=8)
+            self.attention_H1 = SAMHAWindow(enc_channels[0], num_heads=8, window_size=8)
+            self.attention_H2 = SAMHAWindow(enc_channels[1], num_heads=8, window_size=8)
+            self.attention_H3 = SAMHAWindow(enc_channels[2], num_heads=8, window_size=8)
         else:      
             self.attention_H1 = SAMHAChannelGate(enc_channels[0])
             self.attention_H2 = SAMHAChannelGate(enc_channels[1])
-            self.attention_H3 = SAMHAChannelGate(enc_channels[2])    
+            self.attention_H3 = SAMHAChannelGate(enc_channels[2])  
+
+        self.merge1 = FuseLocalAndContext(enc_channels[0])
+        self.merge2 = FuseLocalAndContext(enc_channels[1])
+        self.merge3 = FuseLocalAndContext(enc_channels[2])
+        self.merge4 = FuseLocalAndContext(enc_channels[3])
 
         # UnetStyle Decoder
         self.unet_decoder = UNetStyleDecoder(enc_channels, num_classes=self.n_class)
@@ -175,7 +180,13 @@ class MultiScaleSegFormer(nn.Module):
             attn_2 = self.attention_H2(X2, M2)
             attn_3 = self.attention_H3(X3, M3)
             attn_4 = self.attention_H4(x=X4, y=M4)
-            fused_hidden = (attn_1, attn_2, attn_3, attn_4)
+
+            r1 = self.merge1(X1, attn_1)
+            r2 = self.merge2(X2, attn_2)
+            r3 = self.merge3(X3, attn_3)
+            r4 = self.merge4(X4, attn_4)
+
+            fused_hidden = (r1, r2, r3, r4)
         
         elif self.input_mode == 3:
             if x_medium is None or x_large is None:
@@ -189,8 +200,13 @@ class MultiScaleSegFormer(nn.Module):
             attn_1 = self.attention_H1(X1, M1, G1)
             attn_2 = self.attention_H2(X2, M2, G2)
             attn_3 = self.attention_H3(X3, M3, G3)
-            attn_4 = self.attention_H4(x=X4, y=M4, z=G4)   
-            fused_hidden = (attn_1, attn_2, attn_3, attn_4)
+            attn_4 = self.attention_H4(x=X4, y=M4, z=G4)
+
+            r1 = self.merge1(X1, attn_1)
+            r2 = self.merge2(X2, attn_2)
+            r3 = self.merge3(X3, attn_3)
+            r4 = self.merge4(X4, attn_4)       
+            fused_hidden = (r1, r2, r3, r4)
         else:
             raise ValueError(f"Invalid input mode: {self.input_mode}")
 

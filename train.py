@@ -147,8 +147,7 @@ for name, path in model_paths.items():
 model = create_model_load_weights(n_class, pre_path=model_paths["pre"], input_mode=input_mode, use_window=use_window)
 optimizer, scheduler = get_optimizer_and_scheduler(model=model, base_learning_rate=args.lr, num_epochs=num_epochs, iters_per_epoch=len(dataloader_train))
 
-#class_weights = [0.5127502165862436, 20.107510061415578] #dataset2
-class_weights = [0.5594677721318467, 4.703957724290087] #dataset1
+class_weights = [0.5, 0.5] #dataset1
 
 print(f"Using class weights: {[f'{w:.6f}' for w in class_weights]}\n\n")
 
