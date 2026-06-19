@@ -1,247 +1,194 @@
 # SAMHA: Spatial-Aware Multi-Head Attention for Medical Image Segmentation
 
-A deep learning framework for segmenting tumors in medical images using multi-scale analysis and spatial attention.
+SAMHA is a PyTorch framework for binary medical image segmentation. It combines
+multi-scale image context with spatial-aware attention so the model can use both
+local tissue detail and wider anatomical context during prediction.
 
-## SAMHA Overall Workflow
+## Overview
+
+The model uses a multi-field-of-view (multi-FOV) pipeline. Local, medium, and
+large image patches are encoded in parallel, fused with SAMHA attention, and
+decoded into a final segmentation mask.
 
 ![SAMHA overall workflow](assets/architecture/multi-fov-arcitecture.png)
 
-The proposed method uses a multi-FOV design where three co-registered inputs (local, medium, and large) are encoded in parallel and fused before decoding to produce the final segmentation. We present the mFOV pipeline as the main architecture figure, and we use a companion side-by-side view to explain the attention modules: (A) SAMHA, which applies distance-aware cross-scale attention with learnable fusion, and (B) SAMHA-Window, which performs efficient window-based attention at high-resolution stages. Together, these components combine global context and fine local structure for robust, boundary-aware segmentation.
+SAMHA includes two attention variants:
+
+- **SAMHA**: distance-aware cross-scale attention with learnable fusion.
+- **SAMHA-Window**: window-based attention for efficient high-resolution stages.
 
 ![SAMHA and SAMHA-Window modules](assets/architecture/samha-samhwin.png)
 
-In the module figure, **A** denotes the SAMHA block and **B** denotes the SAMHA-Window block.
+In the module figure, **A** denotes the SAMHA block and **B** denotes the
+SAMHA-Window block.
 
-## Quick Start (5 minutes)
+## Repository Structure
 
-### 1. Install
+```text
+SAMHA/
+|-- train.py                     # Training entry point
+|-- trainer.py                   # Training and evaluation loops
+|-- args.py                      # Command-line arguments
+|-- requirements.txt             # Python dependencies
+|-- assets/architecture/         # Architecture figures
+|-- dataset/dataloader.py        # Dataset loading
+|-- model/                       # Model and attention modules
+|-- notebook/run_samha.ipynb     # Single-image inference demo
+`-- utils/                       # Metrics, losses, schedulers, inference helpers
+```
+
+Generated files such as checkpoints, TensorBoard logs, and notebook predictions
+are written under `saved_models/`, `runs/`, or `notebook/` depending on the
+workflow.
+
+## Installation
+
+Create and activate a Python environment, then install the project
+dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Test on One Image (Jupyter Notebook)
+The project uses PyTorch, torchvision, NumPy, Pillow, OpenCV, scikit-learn,
+TensorBoard, Weights & Biases, and OpenSlide for whole-slide image support.
+
+## Dataset Layout
+
+The training script currently maps `--dataset 1` to `../dataset/dataset1/` and
+`--dataset 2` to `../dataset/dataset2/`. Each dataset should follow this
+structure:
+
+```text
+dataset1/
+|-- train/
+|   |-- images/
+|   `-- gt/
+`-- test/
+    |-- images/
+    `-- gt/
+```
+
+For `--dataset 1`, mask filenames should match image filenames. For
+`--dataset 2`, masks are expected in `gt/` with the pattern
+`<image_name>_mask.<ext>`.
+
+## Quick Start
+
+Run training and validation with all three context scales:
+
+```bash
+python train.py \
+    --dataset 1 \
+    --input_mode 3 \
+    --task_name samha_run \
+    --experiment exp01 \
+    --train \
+    --val
+```
+
+Run the notebook demo for single-image inference:
+
 ```bash
 jupyter notebook notebook/run_samha.ipynb
 ```
-Edit Cell 3 with your dataset path, then run all cells. Predictions save automatically.
 
-### 3. Train on Your Data
-```bash
-python train.py --dataset 1 --input_mode 3 --train --val
-```
+Set the dataset path, checkpoint path, and image name inside the notebook before
+running all cells.
 
-```
-SAMHA/
-├── train.py                    # Main training script
-├── trainer.py                  # Training & evaluation classes
-├── args.py                     # Command-line arguments
-├── requirements.txt            # Dependencies
-├── README.md                   # This file
-│
-├── assets/
-│   └── architecture/
-│       └── [architecture figures]
-│
-├── model/
-│   ├── SAMHA.py               # SAMHA attention module
-│   ├── multiscale_segformer.py # Model architecture
-│   ├── attention_modules.py    # Implementation details
-│   └── [other modules]
-│
-├── dataset/
-│   └── dataloader.py           # Data loading
-│
-├── utils/
-│   ├── trainer_utils.py        # Patch stitching, inference
-│   ├── loss.py                 # Loss functions
-│   └── lr_scheduler.py         # Learning rate scheduling
-│
-├── notebook/
-│   ├── run_samha.ipynb         # Single-image demo (recommended)
-│   └── [saved predictions]
-│
-├── saved_models/
-│   └── [trained checkpoints]
-│
-└── runs/
-    └── [TensorBoard logs]
-```
+## Training Options
 
-## Understanding the Code
+Common arguments:
 
-### Key Files Explained
-
-**`train.py`** - Entry point for training
-- Parses arguments from `args.py`
-- Loads dataset using `dataset/dataloader.py`
-- Creates model using `model/` modules
-- Runs training loop with `trainer.py`
-- Saves checkpoints to `saved_models/`
-
-**`model/multiscale_segformer.py`** - Main model architecture
-- Takes 1-3 input patches (local, medium, large)
-- Encodes each scale separately
-- Fuses features using SAMHA attention
-- Decodes to segmentation output
-
-**`model/SAMHA.py`** - Spatial-Aware Multi-Head Attention
-- **Projection**: Projects all 3 inputs to same dimension
-- **Distance Prior**: Creates spatial distance matrix (closer = higher attention)
-- **Attention**: Computes attention with distance bias
-- **Fusion**: Blends 3 scales with learned weights
-
-**`trainer.py`** - Training & evaluation
-- `Trainer` class: Trains for one epoch
-- `Evaluator` class: Tests on validation/test set
-- Computes metrics (IoU, Dice, Hausdorff Distance)
-
-**`utils/trainer_utils.py`** - Inference helpers
-- `global_to_patch()` - Splits large image into overlapping patches
-- `stitch_patch_predictions_to_global()` - Stitches predictions back to full image size
-- `create_model_load_weights()` - Loads model with checkpoint
-
-**`dataset/dataloader.py`** - Data loading
-- Dataset 1: Dataset1 (structured patches)
-- Dataset 2: Dataset2 (OpenSlide WSI format)
-- Auto-detects label folders (gt/, masks/, mask/)
-
-## Training Configuration
-
-Essential arguments:
 ```bash
 python train.py \
-    --dataset 1              # 1=Dataset1, 2=Dataset2
-    --input_mode 3           # 1=Local, 2=Local+Medium, 3=All three
-    --num_epochs 100         # Training epochs
-    --batch_size 4           # Batch size per GPU
-    --size_p 672             # Patch size (672×672)
-    --context_M 2            # Medium context multiplier (×2 = 1344×1344)
-    --context_L 3            # Large context multiplier (×3 = 2016×2016)
-    --train --val            # Training and validation
+    --dataset 1 \
+    --input_mode 3 \
+    --num_epochs 50 \
+    --batch_size 3 \
+    --size_p 508 \
+    --size_g 508 \
+    --context_M 2 \
+    --context_L 3 \
+    --patch_overlap 0.20 \
+    --task_name samha_run \
+    --experiment exp01 \
+    --train \
+    --val
 ```
 
-**Examples:**
-```bash
-# Dataset1 (local + all contexts)
-python train.py --dataset 1 --input_mode 3 --train --val
+Important options:
 
-# Dataset2 WSI
-python train.py --dataset 2 --input_mode 3 --train --val
+| Argument | Description |
+| --- | --- |
+| `--dataset` | `1` for patch images, `2` for whole-slide image loading |
+| `--input_mode` | `1` local only, `2` local + medium, `3` local + medium + large |
+| `--use_window` | Enable SAMHA-Window attention |
+| `--num_epochs` | Number of training epochs |
+| `--batch_size` | Batch size for global images |
+| `--sub_batch_size` | Batch size for local patch processing |
+| `--size_p` | Local patch size |
+| `--size_g` | Global image resize size |
+| `--context_M` | Medium context multiplier |
+| `--context_L` | Large context multiplier |
+| `--patch_overlap` | Overlap ratio used during patch inference |
+| `--gpu` | GPU device ID, for example `0` or `0,1` |
+
+## Multi-Scale Modes
+
+SAMHA can use one, two, or three input scales:
+
+| Mode | Inputs | Use Case |
+| --- | --- | --- |
+| `1` | Local | Faster inference with local detail only |
+| `2` | Local + medium | Adds regional context |
+| `3` | Local + medium + large | Uses the full multi-scale design |
+
+The local patch size is controlled by `--size_p`. The medium and large context
+sizes are derived from `--context_M` and `--context_L`.
+
+## How SAMHA Works
+
+1. **Multi-scale input**: local, medium, and large patches are prepared from the
+   same image region.
+2. **Parallel encoding**: each scale is processed through its own encoder
+   stream.
+3. **Distance-aware attention**: SAMHA adds a spatial distance prior to the
+   attention logits so nearby regions are favored while still allowing long-range
+   interactions when content is similar.
+4. **Learnable fusion**: features from each scale are combined with learned
+   weights.
+5. **Decoding**: fused features are upsampled into a segmentation mask.
+
+## Outputs
+
+Training checkpoints are saved to:
+
+```text
+saved_models/{dataset}/{experiment}/
 ```
 
-## Datasets
+TensorBoard logs are saved to:
 
-- **Dataset 1**: Dataset1 histopathology (tissue patches, binary segmentation)
-- **Dataset 2**: Dataset2 (whole slide images, WSI format)
-
-## Jupyter Notebook Demo
-
-The easiest way to test SAMHA is using `notebook/run_samha.ipynb`:
-
-1. **Load test image** - Pick one image from your dataset
-2. **Load model** - Load trained weights from checkpoint
-3. **Run inference** - Process image through SAMHA
-4. **Save results** - Predictions saved as `.npy` and `.png`
-
-**What you specify:**
-- `DATA_ROOT` - Path to your dataset folder
-- `CHECKPOINT_PATH` - Path to trained model weights
-- `IMAGE_NAME` - Which image to test (auto-picks first if not set)
-
-**What you get:**
-- `.npy` file - Raw prediction array for analysis
-- `.png` file - Visualization of prediction mask
-- Matplotlib plot - Instant visual feedback
-
-## Multi-Scale Processing
-
-SAMHA processes three patch sizes simultaneously:
-
-| Mode | Local | Medium | Large | Best For |
-|------|-------|--------|-------|----------|
-| **1** | 672×672 | No | No | Fast inference |
-| **2** | 672×672 | 1344×1344 | No | Balanced |
-| **3** | 672×672 | 1344×1344 | 2016×2016 | Best accuracy |
-
-- **Local**: Fine tissue details
-- **Medium**: Regional context (2× multiplier)
-- **Large**: Global anatomical context (3× multiplier)
-
-The model learns to blend all three scales intelligently.
-
-## How SAMHA Works (Step-by-Step)
-
-### 1. Input: Three Patch Scales
-```
-Tissue Patch
-    ├── Local patch (672×672)     → X_local
-    ├── Medium patch (1344×1344)  → X_medium  
-    └── Large patch (2016×2016)   → X_large
+```text
+runs/{dataset}/{experiment}/
 ```
 
-### 2. Encoding: Separate Encoders
-Each scale is processed through its own encoder stream to extract features.
+View logs with:
 
-### 3. SAMHA Attention (The Key Innovation)
-
-**Step 3a - Projection:**
-All features are projected to the same embedding dimension so they can be compared.
-
-**Step 3b - Distance Prior:**
-A spatial distance matrix `D` is created based on pixel coordinates:
-- Close pixels (same tissue region) → high weight (close to 1)
-- Distant pixels (far apart) → low weight (close to 0)
-- Formula: `D = exp(-distance / σ)` (exponential decay)
-
-**Step 3c - Distance-Aware Attention:**
-Instead of standard attention, the logits include a distance penalty:
-```
-Attention = softmax(content_similarity + λ × log(distance_matrix))
-```
-This means:
-- Nearby tissue regions get higher attention weights
-- Distant regions get lower weights
-- But if content is very similar distant regions can still be attended to
-
-**Step 3d - Three Streams Fused:**
-Outputs from all three scales are weighted:
-```
-Output = α₁×output_local + α₂×output_medium + α₃×output_large
-```
-where α₁, α₂, α₃ are learned weights (summing to 1) that the model learns to adjust.
-
-### 4. Decoding: Back to Full Image
-The fused features are upsampled back to the original image resolution.
-
-## Results
-
-Training outputs go to:
-- **Models**: `saved_models/{dataset}/{experiment}/`
-- **Logs**: `runs/{dataset}/{experiment}/` (view with TensorBoard)
-
-Inference outputs go to:
-- **Notebook**: `notebook/{image_name}_pred_mask.npy` and `.png`
-
-View training progress:
 ```bash
 tensorboard --logdir=./runs
 ```
 
+The notebook demo saves prediction arrays and mask visualizations in the
+notebook output directory.
+
 ## Troubleshooting
 
-| Problem | Fix |
-|---------|-----|
-| CUDA out of memory | Reduce `--batch_size` |
-| Slow inference | Use `--input_mode 1` or `2` |
-| Data not found | Check dataset folder names (`gt/`, `masks/`, etc.) |
-| GPU not detected | Check `GPU_DEVICES` in notebook Cell 2 |
-
-## Dependencies
-
-Core packages: PyTorch, NumPy, Pillow, OpenCV, scikit-learn, TensorBoard, WandB, OpenSlide (for WSI support).
-
-Full list in `requirements.txt`. Install with:
-```bash
-pip install -r requirements.txt
-```
-
+| Problem | Suggested Fix |
+| --- | --- |
+| CUDA out of memory | Reduce `--batch_size`, `--sub_batch_size`, or `--input_mode` |
+| Dataset path error | Check the expected `train/images`, `train/gt`, `test/images`, and `test/gt` folders |
+| Mask not found | Confirm mask filenames match the expected naming rule |
+| OpenSlide import error | Install OpenSlide system libraries and `openslide-python` |
+| GPU not selected | Set `--gpu`, for example `--gpu 0` |
