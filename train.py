@@ -27,7 +27,11 @@ from utils.loss import (
     DiceLoss,
 )
 from utils.lr_scheduler import get_optimizer_and_scheduler
-from utils.trainer_utils import create_model_load_weights, collate
+from utils.trainer_utils import (
+    collate,
+    create_model_load_weights,
+    normalize_distance_prior_config,
+)
 from trainer import Trainer, Evaluator
 from args import Args
 
@@ -50,6 +54,27 @@ context_M = args.context_M
 context_L = args.context_L
 patch_overlap = args.patch_overlap
 use_window = getattr(args, 'use_window', False)
+distance_prior = args.distance_prior
+distance_sigma = args.distance_sigma
+lambda_dist_init = args.lambda_dist_init
+lambda_dist_trainable = args.lambda_dist_trainable
+(
+    distance_prior,
+    distance_sigma,
+    lambda_dist_init,
+    lambda_dist_trainable,
+    distance_variant,
+) = normalize_distance_prior_config(
+    distance_prior,
+    distance_sigma,
+    lambda_dist_init,
+    lambda_dist_trainable,
+)
+args.distance_prior = distance_prior
+args.distance_sigma = distance_sigma
+args.lambda_dist_init = lambda_dist_init
+args.lambda_dist_trainable = lambda_dist_trainable
+args.distance_variant = distance_variant
 batch_size = args.batch_size
 num_worker = 4
 
@@ -69,6 +94,18 @@ today = datetime.datetime.today().strftime('%Y-%m-%d')
 print("task_name:", task_name)
 print("experiment:", experiment)
 print("Input_mode:", input_mode, "train:", train, "val:", val)
+print(
+    "Distance prior variant:",
+    distance_variant,
+    "| kernel:",
+    distance_prior,
+    "| sigma:",
+    distance_sigma,
+    "| lambda init:",
+    lambda_dist_init,
+    "| trainable:",
+    lambda_dist_trainable,
+)
 
 if dataset == 1:
     dataset_name = "dataset1"
@@ -80,6 +117,7 @@ elif dataset == 2:
     args.data_path = "../dataset/dataset2/"
     args.model_path = f"./saved_models/dataset2/{experiment}/"
     args.log_path = f"./runs/dataset2/{experiment}/"
+
 
 data_path = args.data_path
 model_path = args.model_path
@@ -93,6 +131,7 @@ print("data_path:", data_path)
 print("model_path:", model_path)
 print("log_path:", log_path, "\n")
 
+
 if train and use_wandb:
     wandb.init(
         project="SAMHA",
@@ -103,6 +142,9 @@ if train and use_wandb:
     wandb.define_metric("train/*", step_metric="epoch")
     wandb.define_metric("train-epoch/*", step_metric="epoch")
     wandb.define_metric("val/*", step_metric="epoch")
+else:
+    print("Not using Weights & Biases (wandb) for logging. use flag --use_wandb to enable it.")
+
 print("preparing datasets and dataloaders......")
 
 all_ids = [f for f in os.listdir(os.path.join(data_path, "train", "images")) if is_image_file(f)]
@@ -144,7 +186,16 @@ print("Model paths:")
 for name, path in model_paths.items():
     print(f"  {name}: {path}")
 
-model = create_model_load_weights(n_class, pre_path=model_paths["pre"], input_mode=input_mode, use_window=use_window)
+model = create_model_load_weights(
+    n_class,
+    pre_path=model_paths["pre"],
+    input_mode=input_mode,
+    use_window=use_window,
+    distance_prior=distance_prior,
+    distance_sigma=distance_sigma,
+    lambda_dist_init=lambda_dist_init,
+    lambda_dist_trainable=lambda_dist_trainable,
+)
 optimizer, scheduler = get_optimizer_and_scheduler(model=model, base_learning_rate=args.lr, num_epochs=num_epochs, iters_per_epoch=len(dataloader_train))
 
 class_weights = [0.5, 0.5] #dataset1
@@ -295,7 +346,21 @@ for epoch in range(0, num_epochs):
             ckpt_path = os.path.join(model_path, f"{task_name}.pth")
             
             if input_mode in (1, 2, 3):
-                torch.save(model.state_dict(), ckpt_path)
+                torch.save(
+                    {
+                        "state_dict": model.state_dict(),
+                        "model_config": {
+                            "input_mode": input_mode,
+                            "use_window": use_window,
+                            "distance_prior": distance_prior,
+                            "distance_sigma": distance_sigma,
+                            "lambda_dist_init": lambda_dist_init,
+                            "lambda_dist_trainable": lambda_dist_trainable,
+                            "distance_variant": distance_variant,
+                        },
+                    },
+                    ckpt_path,
+                )
             else:
                 raise ValueError(f"Invalid Input_mode: {input_mode}. Must be 1-3.")
         

@@ -25,13 +25,20 @@ def get_spatial_position_encoding(H, W, d_model):
     
     return pe
 
-def compute_distance_map(H, W, sigma=1.0):
+def compute_distance_map(H, W, sigma=1.0, kernel="exp"):
+    if not math.isfinite(sigma) or sigma <= 0:
+        raise ValueError(f"sigma must be a finite positive value, got {sigma}.")
     y_coords = torch.arange(H).float().unsqueeze(1).repeat(1, W)
     x_coords = torch.arange(W).float().unsqueeze(0).repeat(H, 1)
     coords = torch.stack([y_coords.flatten(), x_coords.flatten()], dim=1)
     distances = torch.cdist(coords, coords)
-    distance_weights = torch.exp(-distances / sigma)
-    return distance_weights
+    if kernel == "exp":
+        return torch.exp(-distances / sigma)
+    if kernel == "gaussian":
+        return torch.exp(-(distances ** 2) / (2.0 * sigma ** 2))
+    raise ValueError(
+        f"Unknown distance kernel: {kernel}. Expected 'exp' or 'gaussian'."
+    )
 
 def make_norm(norm_type: str, channels: int):
     if norm_type == "gn":
@@ -103,4 +110,3 @@ def build_shift_mask(Hp, Wp, window_size, shift_size, device):
     attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
     attn_mask = attn_mask.masked_fill(attn_mask != 0, -100.0).masked_fill(attn_mask == 0, 0.0)
     return attn_mask
-

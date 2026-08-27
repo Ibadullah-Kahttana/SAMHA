@@ -11,10 +11,12 @@ dist/
 # Training outputs
 checkpoints/
 prediction/
-runs/
 reviews/
-saved_models_1/
+runs/
+saved_models/
 wandb/
+assets/
+tests/
 
 # IDE settings
 .idea/
@@ -25,7 +27,6 @@ wandb/
 
 # Jupyter
 .ipynb_checkpoints/
-*.ipynb
 
 # OS metadata
 .DS_Store
@@ -36,17 +37,4 @@ Thumbs.db
 *.csv
 *.json
 *.log
-*.md
 *.tmp
-
-# Data and generated project folders
-FCtL/
-Ideas/
-comparison_results/
-data_1/
-docs/
-hyperparameter_search/
-paper_imp/
-scripts/
-trackfiles/
-visualization/

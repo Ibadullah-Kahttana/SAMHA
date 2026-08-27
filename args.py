@@ -23,13 +23,13 @@ class Args:
         parser.add_argument('--task_name', type=str, help='task name for naming saved model files and log files')
         parser.add_argument('--experiment', type=str, help='experiment for naming saved model files and log files')
         parser.add_argument('--input_mode', type=int, default=3, choices=[1, 2, 3], help='Input mode for MultiScaleSegFormer: 1=single input (local only), 2=dual input (local+medium), 3=triple input (local+medium+large). Default: 3')
-        parser.add_argument('--use_window', type=str2bool, default=False, help='Use SAMHAWindow for MultiScaleSegFormer. Default: False. Accepts: true/false, yes/no, 1/0')
+        parser.add_argument('--use_window', type=str2bool, default=True, help='Use SAMHAWindow (low attention) for H1-H3 instead of full SAMHA (high attention). Default: True. Setting this False is computationally expensive (quadratic-cost attention on high-resolution H1-H3 feature maps) and not recommended. Accepts: true/false, yes/no, 1/0')
 
         # Distance prior ablation settings (for SAMHA)
-        parser.add_argument('--distance_prior', type=str, default='log', choices=['log', 'exp', 'inv', 'gaussian', 'raw', 'none'], help='Distance prior function: log (default), exp, inv, gaussian, raw, or none (no distance bias)')
+        parser.add_argument('--distance_prior', type=str, default='exp', choices=['exp', 'gaussian', 'none'], help='Distance prior: exp (default), gaussian, or none. Together with --lambda_dist_trainable, this yields exactly five ablations: exp-learned, exp-fixed, gaussian-learned, gaussian-fixed, and none.')
         parser.add_argument('--distance_sigma', type=float, default=1.0, help='Distance scaling parameter (sigma) for distance map computation. Default: 1.0')
         parser.add_argument('--lambda_dist_init', type=float, default=0.1, help='Initial value for lambda_dist (distance bias strength). Default: 0.1')
-        parser.add_argument('--lambda_dist_trainable', type=str2bool, default=True, help='Whether lambda_dist is trainable (True) or fixed (False). Default: True')
+        parser.add_argument('--lambda_dist_trainable', type=str2bool, default=True, help='Whether lambda_dist is learned (True, default) or fixed (False). For --distance_prior none, lambda is forced to 0 and non-trainable.')
 
         # dataset
         parser.add_argument('--dataset', type=int, default=2, choices=[1, 2], help='dataset for training procedure. 1=Dataset1 2=Dataset2')
@@ -46,8 +46,8 @@ class Args:
         # image size and patch overlap
         parser.add_argument('--batch_size', type=int, default=3, help='batch size for origin global image (without downsampling)')
         parser.add_argument('--sub_batch_size', type=int, default=6, help='batch size for using local image patches')
-        parser.add_argument('--size_p', type=int, default=508, help='size (in pixel) for cropped local image')
-        parser.add_argument('--size_g', type=int, default=508, help='size (in pixel) for resized global image')
+        parser.add_argument('--size_p', type=int, default=672, help='size (in pixel) for cropped local image')
+        parser.add_argument('--size_g', type=int, default=672, help='size (in pixel) for resized global image')
         parser.add_argument('--patch_overlap', type=float, default=0.20, help='patch overlap percentage (0.0-1.0, e.g., 0.20 = 20%% overlap)')
 
         # training parameters
