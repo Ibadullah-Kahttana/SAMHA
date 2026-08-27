@@ -79,7 +79,7 @@ def _get_tissue_mask(image_pil, use_otsu=True, bg_threshold=220):
     else:
         return (v_channel < bg_threshold).astype(np.uint8)
 
-def global_to_patch(images, p_size, bg_threshold=220, tissue_coverage_min=0.1, labels=None, overlap_percentage=0.30):
+def global_to_patch(images, p_size, bg_threshold=220, tissue_coverage_min=0.1, labels=None, overlap_percentage=0.20):
     patches, label_patches, coordinates, templates, sizes = [], [], [], [], []
     ratios = [(0, 0)] * len(images)
     patch_area = p_size[0] * p_size[1]
@@ -91,7 +91,7 @@ def global_to_patch(images, p_size, bg_threshold=220, tissue_coverage_min=0.1, l
         sizes.append(size)
         ratios[i] = (float(p_size[0]) / size[0], float(p_size[1]) / size[1])
         
-        tissue_mask = _get_tissue_mask(images[i], use_otsu=False, bg_threshold=bg_threshold)
+        tissue_mask = _get_tissue_mask(images[i], use_otsu=True, bg_threshold=bg_threshold)
         
         current_patches, current_label_patches, current_coordinates = [], [], []
         template = np.zeros(size)
@@ -223,7 +223,7 @@ def stitch_patch_predictions_to_global(patches, n_class, sizes, coordinates, p_s
     
     return predictions
 
-def _create_weight_mask(patch_size, method='linear', sigma_scale=0.25, edge_fade=0.04):
+def _create_weight_mask(patch_size, method='linear', sigma_scale=0.25, edge_fade=0.10):
     """
     Create blending weight mask. Methods:
     'linear': Fades at edges only - BEST for medical (preserves boundaries, removes seams)
@@ -282,19 +282,76 @@ def collate_test(batch):
     img_name = [b.get('img_name', None) for b in batch]
     return {'image': image, 'id': id, 'img_name': img_name}
 
-def _init_dmmn_weights(model):
-    for module in model.modules():
-        if isinstance(module, (nn.Conv2d, nn.ConvTranspose2d)):
-            nn.init.kaiming_normal_(module.weight, nonlinearity="relu")
-            if module.bias is not None:
-                nn.init.constant_(module.bias, 0.0)
-
 def _print_model_params(model, model_name="Model"):
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"[{model_name}] Total: {total:,} | Trainable: {trainable:,} | Frozen: {total-trainable:,}")
 
-def create_model_load_weights(n_class, pre_path="", input_mode=3, use_window=False):
+def normalize_distance_prior_config(
+    distance_prior,
+    distance_sigma,
+    lambda_dist_init,
+    lambda_dist_trainable,
+):
+    """Validate and canonicalize the five supported distance ablations."""
+    if distance_prior is None:
+        distance_prior = "none"
+    allowed_priors = {"exp", "gaussian", "none"}
+    if distance_prior not in allowed_priors:
+        raise ValueError(
+            f"Unknown distance_prior: {distance_prior}. "
+            f"Expected one of {sorted(allowed_priors)}."
+        )
+    if not math.isfinite(distance_sigma) or distance_sigma <= 0:
+        raise ValueError(
+            f"distance_sigma must be a finite positive value, got {distance_sigma}."
+        )
+    if not math.isfinite(lambda_dist_init):
+        raise ValueError(
+            f"lambda_dist_init must be finite, got {lambda_dist_init}."
+        )
+
+    if distance_prior == "none":
+        lambda_dist_init = 0.0
+        lambda_dist_trainable = False
+        distance_variant = "none"
+    else:
+        distance_variant = (
+            f"{distance_prior}-"
+            f"{'learned' if lambda_dist_trainable else 'fixed'}"
+        )
+
+    return (
+        distance_prior,
+        distance_sigma,
+        lambda_dist_init,
+        lambda_dist_trainable,
+        distance_variant,
+    )
+
+def create_model_load_weights(
+    n_class,
+    pre_path="",
+    input_mode=3,
+    use_window=False,
+    distance_prior="exp",
+    distance_sigma=1.0,
+    lambda_dist_init=0.1,
+    lambda_dist_trainable=True,
+):
+    (
+        distance_prior,
+        distance_sigma,
+        lambda_dist_init,
+        lambda_dist_trainable,
+        _,
+    ) = normalize_distance_prior_config(
+        distance_prior,
+        distance_sigma,
+        lambda_dist_init,
+        lambda_dist_trainable,
+    )
+
     def _maybe_partial_load(model, ckpt_path):
         if not (ckpt_path and os.path.isfile(ckpt_path)):
             if ckpt_path:
@@ -306,6 +363,55 @@ def create_model_load_weights(n_class, pre_path="", input_mode=3, use_window=Fal
             blob = torch.load(ckpt_path, map_location="cpu", weights_only=False)
         except TypeError:
             blob = torch.load(ckpt_path, map_location="cpu")
+
+        requested_config = {
+            "input_mode": input_mode,
+            "use_window": use_window,
+            "distance_prior": distance_prior,
+            "distance_sigma": distance_sigma,
+            "lambda_dist_init": lambda_dist_init,
+            "lambda_dist_trainable": lambda_dist_trainable,
+            "distance_variant": (
+                "none"
+                if distance_prior == "none"
+                else f"{distance_prior}-{'learned' if lambda_dist_trainable else 'fixed'}"
+            ),
+        }
+        saved_config = blob.get("model_config") if isinstance(blob, dict) else None
+        if isinstance(saved_config, dict):
+            mismatches = []
+            for key, requested_value in requested_config.items():
+                if key not in saved_config:
+                    continue
+                saved_value = saved_config[key]
+                if isinstance(requested_value, float):
+                    try:
+                        values_match = math.isclose(
+                            float(saved_value),
+                            requested_value,
+                            rel_tol=1e-9,
+                            abs_tol=1e-12,
+                        )
+                    except (TypeError, ValueError):
+                        values_match = False
+                else:
+                    values_match = saved_value == requested_value
+                if not values_match:
+                    mismatches.append(
+                        f"{key}: checkpoint={saved_value!r}, requested={requested_value!r}"
+                    )
+            if mismatches:
+                warnings.warn(
+                    "Checkpoint configuration differs from the requested model: "
+                    + "; ".join(mismatches),
+                    RuntimeWarning,
+                )
+        else:
+            warnings.warn(
+                "Checkpoint has no model_config metadata; its distance-prior "
+                "variant cannot be verified.",
+                RuntimeWarning,
+            )
         
         state = None
         if isinstance(blob, dict):
@@ -358,6 +464,10 @@ def create_model_load_weights(n_class, pre_path="", input_mode=3, use_window=Fal
             share_encoder=False, 
             input_mode=input_mode,
             use_window=use_window,
+            distance_prior=distance_prior,
+            distance_sigma=distance_sigma,
+            lambda_dist_init=lambda_dist_init,
+            lambda_dist_trainable=lambda_dist_trainable,
         ).cuda()
         
         if pre_path:

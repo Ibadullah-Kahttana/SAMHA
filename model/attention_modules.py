@@ -168,6 +168,21 @@ class ModularSAMHA(nn.Module):
         self.fusion_type = fusion_type
         
         assert d_model % num_heads == 0, "d_model must be divisible by num_heads"
+        if distance_prior is None:
+            distance_prior = "none"
+        valid_distance_priors = {"none", "exp", "gaussian"}
+        if distance_prior not in valid_distance_priors:
+            raise ValueError(
+                f"Unknown distance_prior: {distance_prior}. "
+                f"Expected one of {sorted(valid_distance_priors)}."
+            )
+        if not math.isfinite(distance_sigma) or distance_sigma <= 0:
+            raise ValueError(
+                f"distance_sigma must be a finite positive value, got {distance_sigma}."
+            )
+        if distance_prior == "none":
+            lambda_dist_init = 0.0
+            lambda_dist_trainable = False
         
         self.conv_query = nn.Conv2d(in_channels, d_model, 1)
         self.conv_key = nn.Conv2d(in_channels, d_model, 1)
@@ -176,6 +191,11 @@ class ModularSAMHA(nn.Module):
         
         self.distance_prior = distance_prior
         self.distance_sigma = distance_sigma
+        self.distance_variant = (
+            "none"
+            if distance_prior == "none"
+            else f"{distance_prior}-{'learned' if lambda_dist_trainable else 'fixed'}"
+        )
         if lambda_dist_trainable:
             self.lambda_dist = nn.Parameter(torch.tensor(lambda_dist_init))
         else:
@@ -245,27 +265,13 @@ class ModularSAMHA(nn.Module):
             self.conv_key.weight.wd = 0.0
 
     def _distance_bias(self, distance_map):
-        if self.distance_prior in (None, "none"):
+        if self.distance_prior == "none":
             return None
 
-        eps = 1e-6
-        if self.distance_prior == "log":
-            bias_base = torch.log(distance_map + eps)
-        elif self.distance_prior == "exp":
-            bias_base = distance_map
-        elif self.distance_prior == "inv":
-            dist = -self.distance_sigma * torch.log(distance_map + eps)
-            bias_base = 1.0 / (dist + eps)
-        elif self.distance_prior == "gaussian":
-            dist = -self.distance_sigma * torch.log(distance_map + eps)
-            bias_base = torch.exp(-(dist ** 2) / (2.0 * (self.distance_sigma ** 2)))
-        elif self.distance_prior == "raw":
-            dist = -self.distance_sigma * torch.log(distance_map + eps)
-            bias_base = dist
-        else:
+        if self.distance_prior not in ("exp", "gaussian"):
             raise ValueError(f"Unknown distance_prior: {self.distance_prior}")
 
-        return self.lambda_dist * bias_base
+        return self.lambda_dist * distance_map
 
     def forward(self, x, y=None, z=None):
         B, C, H, W = x.size()
@@ -274,9 +280,15 @@ class ModularSAMHA(nn.Module):
         if (self.pos_encoding_cache is None or 
             self.cached_H != H or self.cached_W != W):
             pos_encoding = get_spatial_position_encoding(H, W, self.d_model)
-            distance_map = compute_distance_map(H, W, sigma=self.distance_sigma)
             pos_encoding = pos_encoding.to(device=x.device, dtype=x.dtype)
-            distance_map = distance_map.to(device=x.device, dtype=x.dtype)
+            distance_map = None
+            if self.distance_prior != "none":
+                distance_map = compute_distance_map(
+                    H,
+                    W,
+                    sigma=self.distance_sigma,
+                    kernel=self.distance_prior,
+                ).to(device=x.device, dtype=x.dtype)
             self.pos_encoding_cache = pos_encoding
             self.distance_map_cache = distance_map
             self.cached_H = H
@@ -354,7 +366,7 @@ class SAMHA(ModularSAMHA):
         fusion_type='lfi',
         lr_mult=None,
         weight_init_scale=1.0,
-        distance_prior='log',
+        distance_prior='exp',
         distance_sigma=1.0,
         lambda_dist_init=0.1,
         lambda_dist_trainable=True,
